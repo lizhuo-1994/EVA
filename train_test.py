@@ -243,7 +243,7 @@ def train(env, qnet, target_net, optimizer, replay, value_buffer, config, device
                 total_rewards.append(episode_reward)
                 total_global_steps.append(global_step)
                 break
-        print(episode_reward)
+        
         # call evaluation every config.eval_freq episode
         if episode % config.eval_freq == 0:
             eval_rewards.append(evaluate(episode))
