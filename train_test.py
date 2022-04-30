@@ -7,6 +7,10 @@ import numpy as np
 import utils
 from tcp import trajectory_central_planning
 
+from abstracter import Abstracter, ScoreInspector
+from sklearn.random_projection import GaussianRandomProjection
+
+
 logging.basicConfig(level=20)
 
 def train(env, qnet, target_net, optimizer, replay, value_buffer, config, device):
@@ -20,6 +24,16 @@ def train(env, qnet, target_net, optimizer, replay, value_buffer, config, device
     total_global_steps = []
     global_step = 0
     logging.info("training started...")
+
+    abstracter = Abstracter(config.order,config.decay)
+    abstracter.inspector = ScoreInspector(
+            config.order, 
+            config.grid_num, 
+            config.state_dim, 
+            config.state_min, 
+            config.state_max, 
+            config.mode
+            )
     
     def full_filename(filename):
         return os.path.normpath('/'.join([config.save_dir, filename]))
@@ -147,19 +161,55 @@ def train(env, qnet, target_net, optimizer, replay, value_buffer, config, device
         return np.mean(episode_rewards)
 
     os.makedirs(config.save_dir, exist_ok=True)
+
+    gpj = GaussianRandomProjection(n_components = config.state_dim)
+
     for episode in range(1, config.n_episodes + 1, 1):
         state = env.reset()
         is_terminal = False
         episode_reward = 0
         
+
+        state_list = []
+        action_list = []
+        reward_list = []
+        done_list = []
+        embedding_list = []
+        next_state_list = []
+        hidden_list = []
+
         # main loop for playing one episode
         for _ in range(config.t_max):
+            
+            
+
             action, embedding  = choose_action_embedding( state, 
                                                           utils.epsilon(global_step, config) )
+
             next_state, reward, is_terminal = step(action)
-            replay.push(state, action, reward, next_state, embedding)        
+        
+            if config.method == 'EVA':
+                replay.push(state, action, reward, next_state, embedding)        
+
+            elif config.method == 'RCS':
+                hidden = gpj.fit_transform([embedding])[0]
+                mean = np.mean(hidden)
+                var = np.mean(np.square(hidden-mean))
+                hidden = (hidden - mean) / pow(var + 0.2,0.5)
+
+                embedding_list.append(embedding)
+                state_list.append(state)
+                action_list.append(action)
+                reward_list.append(reward)
+                done_list.append(is_terminal)
+                next_state_list.append(next_state)
+                hidden_list.append(hidden)
+
+                abstracter.append(list(hidden), reward, is_terminal)
+
             state = next_state
             episode_reward += reward 
+
             
             if len(replay) >= config.batch_size:           
                 train_step() 
@@ -173,10 +223,27 @@ def train(env, qnet, target_net, optimizer, replay, value_buffer, config, device
                 target_net.load_state_dict(qnet.state_dict())
             
             if is_terminal:
+
+                if config.method == 'RCS':
+                    reward_list = abstracter.reward_shaping(
+                        np.array(hidden_list),
+                        np.array(reward_list)
+                        )
+                    abstracter.inspector.sync_scores()
+
+                    for i in range(len(state_list)):
+                        replay.push(
+                            state_list[i], 
+                            action_list[i], 
+                            reward_list[i], 
+                            next_state_list[i], 
+                            embedding[i]
+                            ) 
+
                 total_rewards.append(episode_reward)
                 total_global_steps.append(global_step)
                 break
-
+        print(episode_reward)
         # call evaluation every config.eval_freq episode
         if episode % config.eval_freq == 0:
             eval_rewards.append(evaluate(episode))

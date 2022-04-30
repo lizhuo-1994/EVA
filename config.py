@@ -82,3 +82,14 @@ def parse_arguments(config):
                         help='write video during eval episodes')
     parser.parse_args(namespace=config)
 
+    parser.add_argument("--method", type=str, default='EVA')
+    parser.add_argument("--order", type=int, default=1)                  # Directory for storing all experimental data
+    parser.add_argument("--grid_num", type=int, default=5)              # Directory for storing all experimental data
+    parser.add_argument("--decay", type=float, default=0.1 )            # Directory for storing all experimental data
+    parser.add_argument("--state_dim", type=int, default=16 )     # 
+    parser.add_argument("--state_min", type=float, default=-1 )        # 
+    parser.add_argument("--state_max", type=float, default=1 )         # state_max, state_min
+    parser.add_argument("--mode", type=str, default='state', choices=['state', 'state_action'] )
+
+    parser.parse_args(namespace=config)
+
